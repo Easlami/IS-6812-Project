@@ -1,0 +1,473 @@
+---
+title: "EDA"
+author: "Ethan Aslami"
+date: "02-16-2025"
+output: 
+  html_document: 
+    toc: true
+    toc_float: 
+      collapsed: true   
+      smooth_scroll: true
+---
+
+# Business Problem Statement
+
+PROBLEM:
+
+Home Credit would like to offer loans to a large portion of the population who have insufficient or non-existent credit histories. Without a credit score it is difficult to determine whether an individual will default on a loan. This exclusion makes it difficult for many people without a credit score to get access to loans and limits Home Credit’s market reach significantly. 
+
+BENEFIT OF A SOLUTION
+
+- Increase the customer base for Home Credit
+-	Increase loan approvals for eligible borrowers
+- Decrease default rates by improving the ability to predict who will be a trustworthy customer
+
+SUCCESS METRICS 
+
+- Default Rate: decreases proportion of loans resulting in defaults
+- Loan Approval Rate: The proportion of loans approved should increase due to the new method of credit approval based on other factors outside of credit score
+- Customer Retention: Number of repeat clients and improvement of customer satisfaction
+
+ANALYTICS APPROACH
+
+- This will be a supervised approach with a classification model to predict likelihood of default (TARGET)
+- Using the other data/characteristics that we gather we will use various models such as logistic regressions, decision trees, and random forest models
+- Due to the size of the data set and the amount of columns available we will need to determine which ones have the strongest relationships with the target variable and which ones tell us the same thing. This will allow us to simplify the model using only the most important columns. 
+
+
+SCOPE/DELIVERABLES
+
+- Written report of findings from models and prediction results
+- GitHub Repository with all code
+
+
+
+# Setup 
+
+## Load Packages
+```{r libraries, echo=TRUE, message=FALSE, warning=FALSE, results='hide'}
+library(tidyverse)
+library(janitor)
+library(skimr)
+library(DataExplorer)
+library(DT)
+library(scales)
+
+```
+
+
+## Load Data 
+```{r load data, echo=TRUE, message=FALSE, warning=FALSE, results='hide'}
+
+# Load Test data
+test_application <- read_csv("data/application_test.csv", ) %>% 
+  clean_names()
+
+# Load Train Data
+train_application <- read_csv("data/application_train.csv") %>% 
+  clean_names()
+
+# Data Dictionary 
+dictionary <- read_csv("data/HomeCredit_columns_description.csv") %>% 
+  clean_names()
+
+# Bureau data 
+bureau <- read_csv("data/bureau.csv") %>% 
+  clean_names()
+
+# Previous application
+previous_application <- read_csv("data/previous_application.csv") %>% 
+  clean_names()
+
+```
+
+## Data Information 
+This is from the Kaggle case competition website
+
+- application_{train|test}.csv
+
+This is the main table, broken into two files for Train (with TARGET) and Test (without TARGET).
+Static data for all applications. One row represents one loan in our data sample.
+
+
+- bureau.csv
+
+All client's previous credits provided by other financial institutions that were reported to Credit Bureau (for clients who have a loan in our sample).
+For every loan in our sample, there are as many rows as number of credits the client had in Credit Bureau before the application date.
+
+
+- bureau_balance.csv
+
+Monthly balances of previous credits in Credit Bureau.
+This table has one row for each month of history of every previous credit reported to Credit Bureau – i.e the table has (#loans in sample * # of relative previous credits * # of months where we have some history observable for the previous credits) rows.
+
+
+- POS_CASH_balance.csv
+
+Monthly balance snapshots of previous POS (point of sales) and cash loans that the applicant had with Home Credit.
+This table has one row for each month of history of every previous credit in Home Credit (consumer credit and cash loans) related to loans in our sample – i.e. the table has (#loans in sample * # of relative previous credits * # of months in which we have some history observable for the previous credits) rows.
+
+
+- credit_card_balance.csv
+
+Monthly balance snapshots of previous credit cards that the applicant has with Home Credit.
+This table has one row for each month of history of every previous credit in Home Credit (consumer credit and cash loans) related to loans in our sample – i.e. the table has (#loans in sample * # of relative previous credit cards * # of months where we have some history observable for the previous credit card) rows.
+
+
+- previous_application.csv
+
+All previous applications for Home Credit loans of clients who have loans in our sample.
+There is one row for each previous application related to loans in our data sample.
+
+
+- installments_payments.csv
+
+Repayment history for the previously disbursed credits in Home Credit related to the loans in our sample.
+There is a) one row for every payment that was made plus b) one row each for missed payment.
+One row is equivalent to one payment of one installment OR one installment corresponding to one payment of one previous Home Credit credit related to loans in our sample.
+
+
+- HomeCredit_columns_description.csv
+
+This file contains descriptions for the columns in the various data files.
+
+
+## Factorize Character Variables
+```{r}
+# This will factorize all characters and any 0-1 dummy variables for easier analysis 
+train_application <- train_application %>% 
+  mutate(across(where(is.character), as.factor)) %>% 
+  mutate(across(where(~ is.numeric(.) && all(. %in% c(0, 1))), as.factor))
+
+# same for bureau
+bureau <- bureau %>% 
+  mutate(across(where(is.character), as.factor)) %>% 
+  mutate(across(where(~ is.numeric(.) && all(. %in% c(0, 1))), as.factor))
+
+# same for previous application
+# previous_application <- previous_application %>% 
+#   mutate(across(where(is.character), as.factor)) %>% 
+#   mutate(across(where(~ is.numeric(.) && all(. %in% c(0, 1))), as.factor))
+
+
+```
+
+# EDA 
+
+In this section we will begin out analysis of the data and its structure.
+
+## Train Application structure
+
+### See full output by clicking below
+
+<details>
+  <summary>Click to expand</summary>
+```{r}
+
+# Get structure 
+glimpse(train_application)
+
+```
+
+
+This gives us a quick glimpse into the structure of the data
+- Rows: 307,511
+- Columns: 122 
+
+We can also see the types of data we are dealing with in every column
+
+
+```{r}
+
+# Get basic information
+introduce(train_application)
+
+# Plot this information 
+plot_intro(train_application)
+
+
+```
+
+
+
+
+We can see that there are many columns which likely means that we will have to see throughout this EDA which ones will be the most useful in determining our target variable. The next output provides some high level information about the data telling us the number of missing values, complete rows, and total observations available to us. 
+
+
+### Summary Statistics 
+```{r}
+# Summary statistics
+summary_stats <- skim(train_application)
+
+datatable(summary_stats)
+
+```
+- While many columns are complete with values in every row there are a large amount of columns that contain missing values. We will dive more into them in the next section. 
+
+- This table is useful for examining all of the columns factors and numeric variables to see distributions and average values. For some of the numeric variables it may be beneficial to determine the median so that we can account for the affect of outliers on mean values. This can be accomplished once we have narrowed down the amount of variables we will use. 
+
+
+### Missing Values 
+```{r}
+# Check missing values for all columns 
+plot_missing(train_application)
+
+# Now lets simplify this graph so that we can learn more about the columns with lots of missing values 
+
+# Calculate percentage of missing values per column
+missing_values <- train_application %>%
+  summarise(across(everything(), ~ mean(is.na(.)))) %>%
+  pivot_longer(everything(), names_to = "variable", values_to = "missing_pct") %>%
+  arrange(desc(missing_pct))
+
+# Filter columns with 30% or more missing data
+high_missing_cols <- missing_values %>%
+  filter(missing_pct >= 0.30) %>%
+  pull(variable)
+
+# Select only these columns from the dataset
+filtered_data <- train_application %>%
+  select(all_of(high_missing_cols))
+
+# Visualize missing values for filtered columns
+plot_missing(filtered_data)
+```
+
+
+DataExplorer package lets us quickly visualize the amount of missing rows withing all of the columns in the dataset. We can see the overall graph with all of the columns together. This is followed by a graph that zooms in on the columns with more than 30% of their data missing. Many of these columns have at least 100,000 rows missing. We will need to decide whether to impute values or to omit them from the analysis. 
+
+
+## Target Variable Exploration
+```{r simple target exploration}
+
+# Check class balance
+train_application %>%
+  count(target) %>%
+  mutate(percentage = n / sum(n) * 100)
+
+# Visualize class imbalance with two colors for target variable
+ggplot(train_application, aes(x = factor(target), fill = factor(target))) +
+  geom_bar() +
+  geom_text(aes(y = ..count.., label = ..count..), stat = "count", vjust = -0.5) +  # Add text labels
+  labs(title = "Class Distribution of Target Variable",
+       x = "Target (0 = No Default, 1 = Default)",
+       y = "Count") +
+  scale_y_continuous(labels = scales::comma) +
+  scale_fill_manual(values = c("0" = "steelblue", "1" = "coral")) +  # Set custom colors
+  theme_minimal()
+
+
+
+library(ggplot2)
+
+# Visualize class imbalance with two colors for target variable
+nice_viz <- ggplot(train_application, aes(x = factor(target), fill = factor(target))) +
+  geom_bar(stat = "count", show.legend = FALSE) +  # Remove legend since it's unnecessary here
+  geom_text(aes(y = ..count.., label = ..count..), stat = "count", vjust = -0.5, size = 5, fontface = "bold") +  # Enhance text size and boldness
+  labs(
+    title = "Distribution of Loan Default Status",
+    subtitle = "Comparing non-default vs. default rates",
+    x = "Default Status (0 = No Default, 1 = Default)",
+    y = "Number of Applications",
+    caption = "Source: Home Credit Group Dataset"
+  ) +
+  scale_y_continuous(labels = scales::comma) +
+  scale_fill_manual(values = c("0" = "steelblue", "1" = "coral")) +  # Set custom colors
+  theme_minimal(base_size = 15) +  # Larger text for readability
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 18, face = "bold"),  # Center the title and increase size
+    plot.subtitle = element_text(hjust = 0.5, size = 14, face = "italic"),  # Subtitle in italics
+    axis.title = element_text(size = 14),  # Axis labels with bigger font
+    axis.text = element_text(size = 12),  # Axis text with a larger font size
+    plot.caption = element_text(size = 10, hjust = 1)  # Caption on the right
+  )
+
+ggsave("loan_default_distribution.png", plot = nice_viz, width = 10, height = 8)
+
+nice_viz <- ggplot(train_application, aes(x = factor(target), fill = factor(target))) +
+  geom_bar(stat = "count", show.legend = FALSE) +  # Remove legend since it's unnecessary here
+  geom_text(
+    aes(
+      y = ..count.., 
+      label = scales::percent(..count.. / sum(..count..)),  # Calculate the percentage
+    ), 
+    stat = "count", 
+    vjust = -0.5, 
+    size = 5, 
+    fontface = "bold"
+  ) +  # Enhance text size and boldness
+  labs(
+    title = "Distribution of Loan Default Status",
+    subtitle = "Comparing non-default vs. default rates",
+    x = "Default Status (0 = No Default, 1 = Default)",
+    y = "Number of Applications",
+    caption = "Source: Home Credit Group Dataset"
+  ) +
+  scale_y_continuous(labels = scales::comma) +
+  scale_fill_manual(values = c("0" = "steelblue", "1" = "coral")) +  # Set custom colors
+  theme_minimal(base_size = 15) +  # Larger text for readability
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 18, face = "bold"),  # Center the title and increase size
+    plot.subtitle = element_text(hjust = 0.5, size = 14, face = "italic"),  # Subtitle in italics
+    axis.title = element_text(size = 14),  # Axis labels with bigger font
+    axis.text = element_text(size = 12),  # Axis text with a larger font size
+    plot.caption = element_text(size = 10, hjust = 1)  # Caption on the right
+  )
+
+nice_viz
+```
+
+
+- Here we can see that the overwhelming majority 91.92% of the target outcomes are 0s indicating that most of our sample data includes people who did not have difficulties in paying their loans. However this still leaves us with 24,825 cases where individuals had difficulty with payment. 
+
+- Using a majority classifier would predict with fairly high accuracy given the 91% of distribution of the target is 0. This would lead to low predictive power of the minority class. 
+
+#### Factor variable relationships 
+```{r}
+# Check the distribution of all variables against the target
+# train_application %>% 
+# plot_bar(by = "target")
+# I ran this full version before but it had a few too many graphs for this report,
+# I have simplified this to the columns that stood out 
+
+train_application %>%
+  select(target, flag_document_2, flag_document_4, flag_mobil, occupation_type, name_income_type, name_education_type) %>% 
+plot_bar(by = "target")
+
+```
+
+
+These Graphs help us to narrow down some of the variables that seem to have a connection with the target variable. I created these graphs for every factor variable then narrowed the output to the ones with the most compelling relationship with the target variable. Documents 2 and 4 seem to have a connection with the target
+
+#### Numeric variable relationships 
+```{r}
+train_application %>% 
+  select(target, ext_source_2, days_birth, days_last_phone_change, amt_req_credit_bureau_year) %>% 
+  plot_boxplot(by = "target") 
+
+train_application %>% 
+  select(target, ext_source_2, days_birth, days_last_phone_change, amt_req_credit_bureau_year) %>% 
+  plot_histogram()
+```
+
+
+These are 4 numeric variables that have a relationship with individuals having difficulty to pay a loan. We can also see their distributions in the histograms that follow. 
+
+
+# Join with Transactional data 
+This section we will analyze the relationships that the target variable has with the Bureau data set. 
+
+## Bureau Data Set Intro
+```{r}
+# plot the numeric columns in the bureau DF 
+plot_histogram(bureau)
+
+# see data structure
+glimpse(bureau)
+
+# see basic information about dataset including missing data
+datatable(introduce(bureau))
+
+
+```
+
+
+This gives us a glimpse into the distributions of the bureau data set's numeric columns and we can see the structure of the data before joining. This helps contextualize some of the information before we make and assumptions based on the data. 
+
+## Aggregate Bureau Data
+```{r}
+# Aggregate bureau data in preparation for the join
+bureau_agg <- bureau %>%
+  select(sk_id_curr, credit_active, credit_day_overdue, amt_credit_max_overdue, amt_credit_sum,
+         cnt_credit_prolong, amt_credit_sum_debt) %>% 
+  group_by(sk_id_curr) %>%
+  summarise(
+    mean_credit_day_overdue = mean(credit_day_overdue, na.rm = TRUE),
+    mean_amt_credit_max_overdue = mean(amt_credit_max_overdue, na.rm = TRUE),
+    mean_amt_credit_sum = mean(amt_credit_sum, na.rm = TRUE),
+    mean_cnt_credit_prolong = mean(cnt_credit_prolong, na.rm = TRUE),
+    mean_amt_credit_sum_debt = mean(amt_credit_sum_debt, na.rm = TRUE),
+    .groups = 'drop'
+  )
+
+
+# Merge with train data using left_join
+train_merged <- train_application %>%
+  left_join(bureau_agg, by = "sk_id_curr")
+
+```
+
+
+Here we aggregate the data by the current id in preparation for joining it with the application data set 
+
+## Bureau Variables Target Trends
+```{r}
+
+# create df to see target comparisons 
+comparison_with_target <- train_merged %>%
+  group_by(target) %>%
+  summarise(
+    mean_credit_day_overdue = mean(mean_credit_day_overdue, na.rm = TRUE),
+    mean_amt_credit_max_overdue = mean(mean_amt_credit_max_overdue, na.rm = TRUE),
+    mean_amt_credit_sum = mean(mean_amt_credit_sum, na.rm = TRUE),
+    mean_cnt_credit_prolong = mean(mean_cnt_credit_prolong, na.rm = TRUE),
+    mean_amt_credit_sum_debt = mean(mean_amt_credit_sum_debt, na.rm = TRUE),
+    .groups = 'drop'
+  )
+
+# View the comparison
+datatable(comparison_with_target)
+
+```
+
+
+This simple table shows how some of these newly introduced columns relate to the target variable. We can see large differences in the days overdue and max amount overdue columns which tells us they might be useful in determining a client's risk level. This analysis could be repeated with some of the columns in the previous application dataset to see if there are any similar trends. 
+
+
+## Plots for bureau data
+```{r}
+# Visualize class imbalance for mean_credit_day_overdue
+ggplot(comparison_with_target, aes(x = factor(target), y = mean_credit_day_overdue, fill = factor(target))) +
+  geom_bar(stat = "identity", width = 0.5) +
+  geom_text(aes(label = round(mean_credit_day_overdue, 2)), vjust = -0.5) +
+  scale_fill_manual(values = c("0" = "steelblue", "1" = "coral"), labels = c("No Default", "Default")) +
+  labs(title = "Average Days Past Due on Credit Bureau Loans at Time of Loan Application",
+       x = "Target (0 = No Default, 1 = Default)",
+       y = "Mean Credit Day Overdue") +
+  theme_minimal()
+
+
+# Visualize class imbalance for mean_amt_credit_max_overdue
+ggplot(comparison_with_target, aes(x = factor(target), y = mean_amt_credit_max_overdue, fill = factor(target))) +
+  geom_bar(stat = "identity", width = 0.5) +
+  geom_text(aes(label = round(mean_amt_credit_max_overdue, 2)), vjust = -0.5) +
+  scale_fill_manual(values = c("0" = "steelblue", "1" = "coral"), labels = c("No Default", "Default")) +
+  labs(title = "Average Maximum Overdue Credit Amount by Target",
+       x = "Target (0 = No Default, 1 = Default)",
+       y = "Mean Amount Credit Max Overdue") +
+  theme_minimal()
+
+
+```
+
+
+After further analysis on the bureau dataset we can see that on average the amount of days from the time of a loan application is higher for clients who had payment difficulties. We can also see that the maximum overdue credit amount is higher on average for clients with payment difficulties. 
+
+
+# Questions Section
+
+Some of these were addressed in the analysis and others will be assessed later into the project
+
+- Which variables are the most important in detecting risk of default? 
+- How can we join and combine different data sets to further contextualize the problem?
+- When dealing with missing values when should we impute values and when should we think about omitting a column?
+- For clients who had difficulties paying what were some of the common characteristics they shared?
+- What model will be most helpful in predicting the risk level of a new client? 
+- With so many variables what is the best way to sift through them and identify which ones have the most effect on the target variable?
+- What other datasets could I use beyond bureau and previous application to help increase the predictive power of my model? 
+
+# Initial Results / Takeaways 
+
+- This EDA has helped me understand the basics of some of the data that is available for this project. I have identified some potential problems with missing values and will seek out the best way to deal with them as we move into more feature engineering and modeling. Using DataExplorer and Skimr I have begun to paint a picture of some of the common characteristics shared by high risk clients that will be helpful during the modeling process. With a dataset this large it can often be difficult to determine trends and patterns in the data but I feel that through the creation of graphs and tables I have begun to narrow the amount of columns. I believe there is still more work to be done as I continue to work through this project with my team but I now have a good starting point to get the modeling process started. 
+
+

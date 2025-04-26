@@ -1,0 +1,79 @@
+---
+title: "Modeling_Notebook"
+author: "Ethan Aslami"
+date: "2025-03-02"
+output: html_document
+---
+
+# Setup
+
+## Load Packages
+```{r libraries, echo=TRUE, message=FALSE, warning=FALSE, results='hide'}
+library(tidyverse)
+library(janitor)
+library(skimr)
+library(DataExplorer)
+library(DT)
+library(scales)
+library(caret)
+library(C50)
+
+
+```
+
+## Load Data
+```{r}
+# Load Test data
+test_application <- read_csv("data/application_test.csv", ) %>% 
+  clean_names()
+
+# Load Train Data
+train_application <- read_csv("data/application_train.csv") %>% 
+  clean_names()
+
+# Data Dictionary 
+dictionary <- read_csv("data/HomeCredit_columns_description.csv") %>% 
+  clean_names()
+
+# Bureau data 
+bureau <- read_csv("data/bureau.csv") %>% 
+  clean_names()
+
+```
+
+## Prepare data for modeling
+```{r}
+# Create training and test set 
+inTrain <- createDataPartition(y=train_application$target, p = 0.7, list=FALSE)
+
+# See target distribution
+train_target <- train_application[inTrain,2]
+test_target <- train_application[-inTrain,2]
+
+# set up data without the target present
+train_set <- train_application[inTrain,-2]
+test_set <- train_application[-inTrain,-2]
+
+```
+
+
+# Explore data partition 
+```{r}
+# Training set
+prop.table(table(train_target))
+
+# Test set
+prop.table(table(test_target))
+```
+# Modeling 
+
+## Basic Decision Tree
+Using C-50 Package
+```{r}
+# Using the CF confidence factor parameter we can adjust the complexity of the tree
+decision_tree <- C5.0(train_target~.,train_set,
+                     control = C5.0Control(CF=.95,earlyStopping = FALSE,noGlobalPruning = TRUE))
+
+
+```
+
